@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banco de Questões</title>
+<style>
+:root{--bg:#f2f4f3;--fg:#14232b;--mut:#5b6b72;--card:#fff;--bd:#d5dcdb;--ac:#0f766e;--ok:#146c43;--okb:#e1f4ea;--er:#a5281f;--erb:#fbe9e7}
+@media(prefers-color-scheme:dark){:root{--bg:#10171a;--fg:#e4ecec;--mut:#92a4a8;--card:#192226;--bd:#2c3a3f;--ac:#4fd1c5;--ok:#6fdca4;--okb:#14312466;--er:#ff9a90;--erb:#3a1c1a99}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.55 Georgia,"Times New Roman",serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.5rem;margin:.2em 0 .6em}h2{font-size:1.15rem;margin:2em 0 .5em}
+.filtros{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+select,input,button{font:inherit;font-size:.9rem;padding:9px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--fg)}
+input{grid-column:1/-1}
+#q{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:18px;margin-top:14px}
+.meta{font:.8rem system-ui,sans-serif;color:var(--mut);margin-bottom:10px}
+.aviso{color:var(--er)}
+.ctx{font-size:.92rem;color:var(--mut);border-left:3px solid var(--ac);padding-left:10px}
+.enun{white-space:pre-line;margin:.4em 0 1em}
+.alt{display:block;width:100%;text-align:left;margin:7px 0 0;padding:11px 12px;font-size:1rem;line-height:1.45;cursor:pointer}
+.alt:hover:not(:disabled){border-color:var(--ac)}
+.alt:disabled{cursor:default;color:var(--fg);opacity:1}
+.alt.ok{background:var(--okb);border-color:var(--ok)}
+.alt.er{background:var(--erb);border-color:var(--er)}
+.com{font:.88rem/1.45 system-ui,sans-serif;color:var(--mut);padding:5px 12px 0}
+.res{font:600 .95rem system-ui,sans-serif;margin:14px 0 0}.res.ok{color:var(--ok)}.res.er{color:var(--er)}
+.nav{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}.nav button{cursor:pointer}.nav .fim{margin-left:auto}
+.linha{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;font:.85rem system-ui,sans-serif;margin:6px 0}
+.barra{height:8px;background:var(--bd);border-radius:4px;overflow:hidden}.barra i{display:block;height:100%;background:var(--ac)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>Banco de Questões</h1>
+<div class="filtros">
+  <select id="fFonte"></select><select id="fAss"></select>
+  <select id="fSt">
+    <option value="">Todas</option><option value="nova">Não resolvidas</option>
+    <option value="erro">Caderno de erros</option><option value="ok">Acertadas</option><option value="fav">Favoritas</option>
+  </select>
+  <input id="fBusca" placeholder="Buscar no enunciado">
+</div>
+<div id="q"></div>
+<h2>Desempenho</h2>
+<div id="st"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ler = (k, v) => { try { return JSON.parse(localStorage.getItem(k)) ?? v } catch { return v } };
+const gravar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} };
+let prog = ler("qz_prog", {}), fav = ler("qz_fav", []), todas = [], lista = [], i = 0;
+
+
+async function iniciar() {
+  try {
+    const idx = await (await fetch("questoes/index.json")).json();
+    for (const f of idx) {
+      const d = await (await fetch("questoes/" + f.arquivo)).json();
+      d.questoes.forEach(q => { q.fonte = d.fonte; todas.push(q); });
+    }
+  } catch (e) { $("q").innerHTML = "<p>Não foi possível carregar as questões. Confira a pasta <b>questoes/</b>.</p>"; return; }
+  const opcoes = (el, titulo, valores) => el.innerHTML = `<option value="">${titulo}</option>` + [...new Set(valores)].sort().map(v => `<option>${esc(v)}</option>`).join("");
+  opcoes($("fFonte"), "Todas as fontes", todas.map(q => q.fonte));
+  opcoes($("fAss"), "Todos os assuntos", todas.map(q => q.assunto));
+  ["fFonte", "fAss", "fSt"].forEach(id => $(id).onchange = filtrar);
+  $("fBusca").oninput = filtrar;
+  filtrar();
+}
+
+function filtrar() {
+  const f = $("fFonte").value, a = $("fAss").value, s = $("fSt").value, b = $("fBusca").value.toLowerCase();
+  lista = todas.filter(q => (!f || q.fonte === f) && (!a || q.assunto === a) && (!b || q.enunciado.toLowerCase().includes(b)) &&
+    (!s || (s === "nova" ? !prog[q.id] : s === "erro" ? prog[q.id] && !prog[q.id].ok : s === "ok" ? prog[q.id]?.ok : fav.includes(q.id))));
+  i = 0; render(); stats();
+}
+
+function render() {
+  const q = lista[i];
+  if (!q) { $("q").innerHTML = "<p>Nenhuma questão com esses filtros.</p>"; return; }
+  const p = prog[q.id], com = q.comentarios || {};
+  $("q").innerHTML =
+    `<div class="meta">Questão ${i + 1} de ${lista.length} · ${esc(q.fonte)} · nº ${q.numero} · ${esc(q.assunto)}${q.revisar ? ' · <b class="aviso">conferir gabarito</b>' : ""}</div>` +
+    (q.contexto ? `<p class="ctx">${esc(q.contexto)}</p>` : "") +
+    `<p class="enun">${esc(q.enunciado)}</p>` +
+    Object.entries(q.alternativas).map(([l, t]) => {
+      const c = "alt" + (p && l === q.gabarito ? " ok" : p && l === p.r ? " er" : "");
+      return `<button class="${c}" data-l="${l}" ${p ? "disabled" : ""}><b>${l})</b> ${esc(t)}</button>` +
+        (p && com[l] ? `<div class="com">${esc(com[l])}</div>` : "");
+    }).join("") +
+    (p ? `<p class="res ${p.ok ? "ok" : "er"}">${p.ok ? "Correto!" : "Errado. Gabarito: " + esc(q.gabarito)}</p>` : "") +
+    `<div class="nav"><button data-a="ant" ${i ? "" : "disabled"}>Anterior</button><button data-a="prox" ${i < lista.length - 1 ? "" : "disabled"}>Próxima</button>` +
+    `<button data-a="fav">${fav.includes(q.id) ? "Remover dos favoritos" : "Favoritar"}</button>` +
+    (p ? `<button class="fim" data-a="refazer">Refazer</button>` : "") + `</div>`;
+}
+
+$("q").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const q = lista[i];
+  if (b.dataset.l) {
+    if (!q.gabarito) { alert("Esta questão está sem gabarito no JSON."); return; }
+    prog[q.id] = { r: b.dataset.l, ok: b.dataset.l === q.gabarito, t: Date.now() };
+    gravar("qz_prog", prog); render(); stats(); return;
+  }
+  const a = b.dataset.a;
+  if (a === "ant") i--; else if (a === "prox") i++;
+  else if (a === "fav") { fav = fav.includes(q.id) ? fav.filter(x => x !== q.id) : [...fav, q.id]; gravar("qz_fav", fav); }
+  else if (a === "refazer") { delete prog[q.id]; gravar("qz_prog", prog); stats(); }
+  render();
+};
+
+function stats() {
+  const por = {};
+  todas.forEach(q => { const p = prog[q.id]; if (!p) return; const s = por[q.assunto] ??= { n: 0, ok: 0 }; s.n++; s.ok += p.ok; });
+  const linhas = Object.entries(por).sort((a, b) => b[1].n - a[1].n);
+  const n = linhas.reduce((t, [, s]) => t + s.n, 0), ok = linhas.reduce((t, [, s]) => t + s.ok, 0);
+  $("st").innerHTML = n ? `<p>${n} resolvidas, ${Math.round(100 * ok / n)}% de acerto.</p>` +
+    linhas.map(([a, s]) => `<div class="linha"><span>${esc(a)}</span><span class="barra"><i style="width:${100 * s.ok / s.n}%"></i></span><span>${s.ok}/${s.n}</span></div>`).join("")
+    : "<p>Resolva algumas questões para ver seu desempenho por assunto.</p>";
+}
+iniciar();
+</script>
+</body>
+</html>

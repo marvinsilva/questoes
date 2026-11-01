@@ -1,0 +1,22 @@
+name: Gerar questões a partir dos PDFs
+on:
+  push:
+    paths: ["pdfs/**", "tools/pdf_para_json.py"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  gerar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install pymupdf
+      - run: python tools/pdf_para_json.py
+      - name: Salvar JSON no repositório
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add questoes
+          git diff --cached --quiet || (git commit -m "Atualiza questões" && git push)
